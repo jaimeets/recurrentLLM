@@ -39,6 +39,7 @@ class StoryDataset(Dataset):
 class RNNCell(nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
         super().__init__()  
+        self.ln = nn.LayerNorm(hidden_size)
         self.w1 = nn.Linear(input_size, hidden_size)
         self.w2 = nn.Linear(hidden_size, hidden_size)
         self.w3 = nn.Linear(hidden_size, output_size)
@@ -46,7 +47,7 @@ class RNNCell(nn.Module):
     def forward(self, input, state):
         out = self.w1(input)
         state = self.w2(state)
-        state = F.tanh(out + state)
+        state = F.tanh(self.ln(out + state))
         out = self.w3(state)
         return out, state
     
