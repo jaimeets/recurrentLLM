@@ -8,11 +8,8 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
 ds = load_from_disk("stories_dataset")
-id_to_char = {idx:chr(dec) for idx, dec in enumerate(range(32, 126))}
-id_to_char[10] = chr(10)
-char_to_id = {v:k for k, v in id_to_char.items()}
-
-vocab_size = len(id_to_char)
+# Byte-level vocab: 0..255
+vocab_size = 256
 
 ndim = 256
 hidden_size = ndim * 4
@@ -23,16 +20,15 @@ n_steps = 512
 
 
 class StoryDataset(Dataset):
-    def __init__(self, dataset, char_to_id):
+    def __init__(self, dataset):
         self.dataset = dataset
-        self.char_to_id = char_to_id
 
     def __len__(self):
         return len(self.dataset)
 
     def __getitem__(self, idx):
         story = self.dataset[idx]["text"]
-        tokens = [self.char_to_id[ch] for ch in story if ch in self.char_to_id]
+        tokens = list(story.encode("utf-8", errors="replace"))
         return torch.tensor(tokens, dtype=torch.long)
 
 
@@ -85,7 +81,7 @@ def collate_fn(batch):
     return inputs, targets, lengths
 
 
-train_dataset = StoryDataset(ds["train"], char_to_id)
+train_dataset = StoryDataset(ds["train"])
 loader = DataLoader(
     train_dataset,
     batch_size=8,
@@ -137,30 +133,6 @@ for step, (inputs, targets, lengths) in enumerate(loader):
 save_path = "char_rnn.pt"
 torch.save(model.state_dict(), save_path)
 print(f"Saved model to {save_path}")
-
-def sample(model, start_text, max_new_chars=200, temperature=1.0):
-    model.eval()
-    states = [torch.zeros(1, hidden_size, device=device) for _ in range(n_cells)]
-    for ch in start_text:
-        idx = torch.tensor([char_to_id.get(ch, 0)], device=device)
-        _, states = model(idx, states)
-    current = start_text
-    last_ch = start_text[-1] if len(start_text) > 0 else " "
-    for _ in range(max_new_chars):
-        idx = torch.tensor([char_to_id.get(last_ch, 0)], device=device)
-        logits, states = model(idx, states)
-        logits = logits.squeeze(0) / max(temperature, 1e-6)
-        probs = F.softmax(logits, dim=-1)
-        next_id = torch.multinomial(probs, num_samples=1).item()
-        next_ch = id_to_char.get(next_id, " ")
-        current += next_ch
-        last_ch = next_ch
-    return current
-
-with torch.no_grad():
-    prompt = "Once upon a time"
-    out = sample(model, prompt, max_new_chars=200, temperature=0.9)
-    print(out)
 
 
 
